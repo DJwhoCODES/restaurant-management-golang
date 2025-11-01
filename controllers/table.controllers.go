@@ -1,6 +1,12 @@
 package controllers
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/djwhocodes/restaurant_management/database"
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/mongo"
+)
+
+var tableModel *mongo.Collection = database.OpenCollection(database.MongoClient, "table")
 
 func GetTables() gin.HandlerFunc {
 	return func(c *gin.Context) {}
