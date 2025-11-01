@@ -5,19 +5,19 @@ import (
 )
 
 func GetUsers() gin.HandlerFunc {
-	return func(ctx *gin.Context) {}
+	return func(c *gin.Context) {}
 }
 
 func GetUser() gin.HandlerFunc {
-	return func(ctx *gin.Context) {}
+	return func(c *gin.Context) {}
 }
 
 func SignUp() gin.HandlerFunc {
-	return func(ctx *gin.Context) {}
+	return func(c *gin.Context) {}
 }
 
 func Login() gin.HandlerFunc {
-	return func(ctx *gin.Context) {}
+	return func(c *gin.Context) {}
 }
 
 // func HashPassword(password string) string {
