@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/djwhocodes/restaurant_management/database"
@@ -15,15 +16,62 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var foodModel *mongo.Collection = database.OpenCollection(database.MongoClient, "food")
-var menuModel *mongo.Collection = database.OpenCollection(database.MongoClient, "menu")
 var validate = validator.New()
 
 func GetFoods() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
+		pageStr := c.DefaultQuery("page", "1")
+		limitStr := c.DefaultQuery("limit", "10")
+
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 1 || limit > 100 {
+			limit = 10
+		}
+
+		skip := (page - 1) * limit
+
+		findOptions := options.Find()
+		findOptions.SetSkip(int64(skip))
+		findOptions.SetLimit(int64(limit))
+		findOptions.SetSort(bson.D{{Key: "created_at", Value: -1}})
+
+		cursor, err := foodModel.Find(ctx, bson.M{}, findOptions)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching food items"})
+			return
+		}
+		defer cursor.Close(ctx)
+
+		var foods []bson.M
+		if err := cursor.All(ctx, &foods); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error decoding food items"})
+			return
+		}
+
+		total, err := foodModel.CountDocuments(ctx, bson.M{})
+		if err != nil {
+			total = int64(len(foods))
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"page":       page,
+			"limit":      limit,
+			"total":      total,
+			"totalPages": int(math.Ceil(float64(total) / float64(limit))),
+			"data":       foods,
+		})
 	}
 }
 
@@ -109,7 +157,74 @@ func CreateFood() gin.HandlerFunc {
 }
 
 func UpdateFood() gin.HandlerFunc {
-	return func(c *gin.Context) {}
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		foodId := c.Param("food_id")
+		if foodId == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "food_id parameter is required"})
+			return
+		}
+
+		var food models.Food
+		if err := c.BindJSON(&food); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+			return
+		}
+
+		if food.Menu_Id != nil {
+			var menu models.Menu
+			err := menuModel.FindOne(ctx, bson.M{"menu_id": *food.Menu_Id}).Decode(&menu)
+			if err != nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Menu not found"})
+				return
+			}
+
+			if time.Now().Before(menu.Start_Date) || time.Now().After(menu.End_Date) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Menu is not active"})
+				return
+			}
+		}
+
+		updateObj := bson.D{}
+
+		if food.Name != nil {
+			updateObj = append(updateObj, bson.E{Key: "name", Value: *food.Name})
+		}
+		if food.Price != nil {
+			updateObj = append(updateObj, bson.E{Key: "price", Value: *food.Price})
+		}
+		if food.Food_Image != nil {
+			updateObj = append(updateObj, bson.E{Key: "food_image", Value: *food.Food_Image})
+		}
+		if food.Menu_Id != nil {
+			updateObj = append(updateObj, bson.E{Key: "menu_id", Value: *food.Menu_Id})
+		}
+
+		updateObj = append(updateObj, bson.E{Key: "updated_at", Value: time.Now()})
+
+		if len(updateObj) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No valid fields provided for update"})
+			return
+		}
+
+		filter := bson.M{"food_id": foodId}
+		update := bson.D{{Key: "$set", Value: updateObj}}
+
+		result, err := foodModel.UpdateOne(ctx, filter, update)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error updating food item"})
+			return
+		}
+
+		if result.MatchedCount == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Food item not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Food item updated successfully"})
+	}
 }
 
 // func round(num float64) int {}

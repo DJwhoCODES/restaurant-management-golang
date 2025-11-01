@@ -7,12 +7,15 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/djwhocodes/restaurant_management/database"
 	"github.com/djwhocodes/restaurant_management/models"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
+
+var menuModel *mongo.Collection = database.OpenCollection(database.MongoClient, "menu")
 
 func GetMenus() gin.HandlerFunc {
 	return func(c *gin.Context) {
