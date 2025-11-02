@@ -192,11 +192,29 @@ func GetOrderItemsByOrder() gin.HandlerFunc {
 	}
 }
 
-func ItemsByOrder(id string) (orderItems []primitive.M, err error) {
+func ItemsByOrder(orderID string) (orderItems []bson.M, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cursor, err := orderItemModel.Find(ctx, bson.M{"order_id": id})
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "order_id", Value: orderID}}}},
+		{
+			{Key: "$lookup", Value: bson.D{
+				{Key: "from", Value: "food"},
+				{Key: "localField", Value: "food_id"},
+				{Key: "foreignField", Value: "food_id"},
+				{Key: "as", Value: "food_details"},
+			}},
+		},
+		{
+			{Key: "$unwind", Value: bson.D{
+				{Key: "path", Value: "$food_details"},
+				{Key: "preserveNullAndEmptyArrays", Value: true},
+			}},
+		},
+	}
+
+	cursor, err := orderItemModel.Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, err
 	}
@@ -205,5 +223,6 @@ func ItemsByOrder(id string) (orderItems []primitive.M, err error) {
 	if err = cursor.All(ctx, &orderItems); err != nil {
 		return nil, err
 	}
+
 	return orderItems, nil
 }
